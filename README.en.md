@@ -139,7 +139,7 @@ Nothing else to install.
 
 ## Contact banner
 
-Once results are shown, a discreet banner offers the services of [HPI Innovations](https://www.hpi-innovations.fr/?utm_source=github&utm_medium=readme&utm_campaign=phare) (the author's company) to help fix the issues found, with a link to its website and an e-mail address. Nothing is sent unless you click: the link opens your browser, the address opens a new empty message in your mail app. The banner closes with the cross. In the source it is `promoBanner` in `Sources/Phare/Views.swift`: remove it if you build your own version.
+Once results are shown, a discreet banner offers the services of [HPI Innovations](https://www.hpi-innovations.fr/?utm_source=github&utm_medium=readme&utm_campaign=phare) (the author's company) to help fix the issues found, with a link to its website and an e-mail address. Nothing is sent unless you click: the link opens your browser, the address opens a new empty message in your mail app. The banner closes with the cross.
 
 ## Compatibility and known limits
 
