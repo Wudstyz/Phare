@@ -64,6 +64,18 @@ final class AppModel: ObservableObject {
     @Published var siteTab: SiteTab = .pages
     @Published var backlinks: BacklinkData?
     @Published var exportNotice: String?
+    @Published var promoDismissed = false
+
+    func openPromo() {
+        if let u = URL(string: "https://www.hpi-innovations.fr/?utm_source=phare&utm_medium=app&utm_campaign=bandeau") {
+            NSWorkspace.shared.open(u)
+        }
+    }
+
+    func openPromoMail() {
+        let subject = "Correction de mon site (via Phare)".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let u = URL(string: "mailto:damien@hpi-innovations.fr?subject=\(subject)") { NSWorkspace.shared.open(u) }
+    }
 
     func analyze() { start(demo: false) }
 
@@ -253,6 +265,9 @@ struct ContentView: View {
         VStack(spacing: 0) {
             header
             Divider()
+            if (model.report != nil || model.site != nil) && !model.promoDismissed {
+                promoBanner
+            }
             if let r = model.detail?.report ?? model.report {
                 results(r)
             } else if let s = model.site {
@@ -329,6 +344,50 @@ struct ContentView: View {
         }
         .padding(14)
         .background(Theme.card)
+    }
+
+    // MARK: Bandeau
+
+    /// Bandeau discret affiché une fois les résultats obtenus. Fermable. Ouvre le site dans le navigateur au clic (rien n'est envoyé avant).
+    private var promoBanner: some View {
+        HStack(spacing: 8) {
+            Spacer()
+            Text("Envie de corriger ces points ? HPI Innovations est disponible.")
+                .font(.system(size: 12))
+                .foregroundColor(Theme.navy)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+            Button {
+                model.openPromo()
+            } label: {
+                Text("hpi-innovations.fr →").font(.system(size: 12, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(Theme.teal)
+            .help("Ouvre le site dans votre navigateur")
+            Text("·").font(.system(size: 12)).foregroundColor(Theme.muted)
+            Button {
+                model.openPromoMail()
+            } label: {
+                Text(verbatim: "damien@hpi-innovations.fr").font(.system(size: 12, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(Theme.teal)
+            .help("Ouvre un nouveau message dans votre application de mail")
+            Spacer()
+            Button {
+                model.promoDismissed = true
+            } label: {
+                Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(Theme.muted)
+            .help("Masquer ce bandeau")
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 28)
+        .background(Theme.teal.opacity(0.08))
+        .overlay(Divider(), alignment: .bottom)
     }
 
     // MARK: Accueil

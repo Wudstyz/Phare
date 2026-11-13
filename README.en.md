@@ -80,6 +80,10 @@ Nothing else to install.
 3. Read the **Priorités** tab, fix, run again.
 4. **Exporter le rapport…** saves a Markdown report.
 
+## Contact banner
+
+Once results are shown, a discreet banner offers the services of HPI Innovations (the author's company) to help fix the issues found, with a link to its website and an e-mail address. Nothing is sent unless you click: the link opens your browser, the address opens a new empty message in your mail app. The banner closes with the cross. In the source it is `promoBanner` in `Sources/Phare/Views.swift`: remove it if you build your own version.
+
 ## Compatibility and known limits
 
 - Apple Silicon Macs (arm64). Built for macOS 13+, but **only tested on macOS 26** (a single Mac).

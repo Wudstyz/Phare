@@ -80,6 +80,10 @@ Rien d'autre à installer.
 3. Lisez l'onglet **Priorités**, corrigez, relancez.
 4. **Exporter le rapport…** pour garder une trace en Markdown.
 
+## Bandeau de contact
+
+Une fois les résultats affichés, un bandeau discret propose les services de HPI Innovations (l'entreprise de l'auteur) pour aider à corriger les points relevés, avec un lien vers son site et une adresse e-mail. Rien n'est envoyé tant que vous ne cliquez pas : le lien ouvre votre navigateur, l'adresse ouvre un nouveau message vide dans votre application de mail. Le bandeau se ferme avec la croix. Dans les sources, il se trouve dans `promoBanner` de `Sources/Phare/Views.swift` : supprimez-le si vous construisez votre propre version.
+
 ## Compatibilité et limites connues
 
 - Mac Apple Silicon (arm64). Le programme est compilé pour macOS 13 minimum, mais **testé uniquement sur macOS 26** (un seul Mac).
