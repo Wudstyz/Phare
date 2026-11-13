@@ -24,6 +24,8 @@ Vous obtenez trois scores sur 100, un score global et une liste de **priorités*
 
 L'analyse se fait **depuis votre Mac** : aucune donnée n'est envoyée à un service tiers.
 
+> **Besoin d'aide pour corriger les points relevés ?** [HPI Innovations](https://www.hpi-innovations.fr/?utm_source=github&utm_medium=readme&utm_campaign=phare) est disponible pour vous accompagner.
+
 ## Deux modes
 
 - **Une page** : analyse l'adresse indiquée.
@@ -137,7 +139,7 @@ Rien d'autre à installer.
 
 ## Bandeau de contact
 
-Une fois les résultats affichés, un bandeau discret propose les services de HPI Innovations (l'entreprise de l'auteur) pour aider à corriger les points relevés, avec un lien vers son site et une adresse e-mail. Rien n'est envoyé tant que vous ne cliquez pas : le lien ouvre votre navigateur, l'adresse ouvre un nouveau message vide dans votre application de mail. Le bandeau se ferme avec la croix. Dans les sources, il se trouve dans `promoBanner` de `Sources/Phare/Views.swift` : supprimez-le si vous construisez votre propre version.
+Une fois les résultats affichés, un bandeau discret propose les services de [HPI Innovations](https://www.hpi-innovations.fr/?utm_source=github&utm_medium=readme&utm_campaign=phare) (l'entreprise de l'auteur) pour aider à corriger les points relevés, avec un lien vers son site et une adresse e-mail. Rien n'est envoyé tant que vous ne cliquez pas : le lien ouvre votre navigateur, l'adresse ouvre un nouveau message vide dans votre application de mail. Le bandeau se ferme avec la croix. Dans les sources, il se trouve dans `promoBanner` de `Sources/Phare/Views.swift` : supprimez-le si vous construisez votre propre version.
 
 ## Compatibilité et limites connues
 
