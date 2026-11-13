@@ -53,10 +53,42 @@ enum DemoData {
     Sitemap: https://www.atelier-du-bois-demo.fr/sitemap.xml
     """
 
-    static let sitemap = """
-    <?xml version="1.0" encoding="UTF-8"?>
-    <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://www.atelier-du-bois-demo.fr/</loc></url></urlset>
-    """
+    static let paths = ["/", "/realisations", "/devis", "/contact", "/blog/choisir-son-escalier", "/mentions-legales"]
+
+    static let sitemap: String = {
+        let urls = paths.map { "<url><loc>https://www.atelier-du-bois-demo.fr\($0)</loc></url>" }.joined()
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\(urls)</urlset>"
+    }()
+
+    private static let filler = "Nous fabriquons depuis 1998 des escaliers, des cuisines et des dressings sur mesure, entièrement conçus et posés par nos menuisiers. Plus de 450 projets réalisés, un délai moyen de 6 semaines et un devis gratuit sous 48 h dans un rayon de 60 km autour de Rennes."
+
+    private static func page(title: String, desc: String?, h1: String, body: String, schema: String = "", words: Int = 3) -> String {
+        let d = desc.map { "<meta name=\"description\" content=\"\($0)\">" } ?? ""
+        let text = String(repeating: "<p>" + filler + "</p>", count: words)
+        return """
+        <!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>\(title)</title>\(d)
+        <meta name="viewport" content="width=device-width, initial-scale=1"><link rel="canonical" href="https://www.atelier-du-bois-demo.fr">
+        \(schema)</head><body><a href="/">Accueil</a> <a href="/realisations">Réalisations</a> <a href="/devis">Devis</a> <a href="/contact">Contact</a> <a href="/blog/choisir-son-escalier">Blog</a>
+        <h1>\(h1)</h1>\(body)\(text)</body></html>
+        """
+    }
+
+    static let pages: [String: String] = [
+        "/": html,
+        "/realisations": page(title: "Nos réalisations – Atelier du Bois", desc: nil, h1: "Réalisations",
+                              body: "<h2>Escaliers</h2><img src=\"/a.jpg\"><img src=\"/b.jpg\"><img src=\"/c.jpg\"><h2>Cuisines</h2><ul><li>Chêne</li><li>Hêtre</li></ul>"),
+        "/devis": page(title: "Contact et devis – Atelier du Bois", desc: "Demandez un devis gratuit pour votre projet de menuiserie sur mesure, réponse sous 48 h.",
+                       h1: "Demander un devis", body: "<h2>Votre projet</h2>"),
+        "/contact": page(title: "Contact et devis – Atelier du Bois", desc: nil, h1: "Contact", body: "<h2>Nous trouver</h2>", words: 1),
+        "/blog/choisir-son-escalier": page(
+            title: "Comment choisir son escalier sur mesure ? Guide 2026",
+            desc: "Bois, forme, budget : tout ce qu'il faut savoir pour choisir un escalier sur mesure, avec les prix moyens et les délais de fabrication.",
+            h1: "Comment choisir son escalier sur mesure ?",
+            body: "<h2>Quel bois choisir pour un escalier ?</h2><ul><li>Chêne</li><li>Hêtre</li></ul><h2>Quel budget prévoir ?</h2><table><tr><td>Droit</td><td>2 500 €</td></tr></table><h2>Combien de temps de fabrication ?</h2><p>Comptez 6 semaines en moyenne, avec 3 visites sur place.</p><a href=\"https://www.service-public.fr\">Service-public</a> <a href=\"https://www.ademe.fr\">ADEME</a> <time datetime=\"2026-03-10\">10 mars 2026</time>",
+            schema: "<script type=\"application/ld+json\">{\"@context\":\"https://schema.org\",\"@graph\":[{\"@type\":\"Article\",\"author\":{\"@type\":\"Person\",\"name\":\"Jean Martin\"},\"datePublished\":\"2026-03-10\"},{\"@type\":\"FAQPage\"},{\"@type\":\"Organization\",\"sameAs\":[\"https://www.facebook.com/exemple\"]}]}</script>",
+            words: 2),
+        "/mentions-legales": page(title: "Mentions légales", desc: nil, h1: "Mentions légales", body: "", words: 1),
+    ]
 
     static let fetch: FetchFn = { url in
         let base = URL(string: DemoData.url + url.path)!
@@ -64,10 +96,12 @@ enum DemoData {
             Fetched(status: 200, headers: [:], body: body, finalURL: base, seconds: seconds, bytes: body.utf8.count)
         }
         switch url.path {
-        case "", "/": return ok(DemoData.html, 1.8)
         case "/robots.txt": return ok(DemoData.robots)
         case "/sitemap.xml": return ok(DemoData.sitemap)
-        default: return Fetched(status: 404, headers: [:], body: "", finalURL: base, seconds: 0.2, bytes: 0)
+        case "": return ok(DemoData.html, 1.8)
+        default:
+            if let body = DemoData.pages[url.path] { return ok(body, url.path == "/" ? 1.8 : 0.7) }
+            return Fetched(status: 404, headers: [:], body: "", finalURL: base, seconds: 0.2, bytes: 0)
         }
     }
 }

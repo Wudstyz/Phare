@@ -14,9 +14,11 @@ typealias FetchFn = (URL) async -> Fetched?
 enum AnalyzerError: LocalizedError {
     case invalidURL
     case unreachable
+    case noSitemap
 
     var errorDescription: String? {
         switch self {
+        case .noSitemap: return "Aucun sitemap exploitable trouvé sur ce site. Utilisez le mode « Une page », ou ajoutez un sitemap.xml."
         case .invalidURL: return "Adresse invalide. Exemple : https://www.monsite.fr"
         case .unreachable: return "Impossible de joindre ce site (adresse erronée, site hors ligne ou pas de connexion Internet)."
         }
@@ -78,32 +80,56 @@ struct Analyzer {
         return u
     }
 
-    func run(_ input: String) async throws -> Report {
-        guard let url = Analyzer.normalize(input) else { throw AnalyzerError.invalidURL }
-        guard let page = await fetch(url) else { throw AnalyzerError.unreachable }
+    /// Fichiers communs à tout le site (robots.txt, llms.txt, sitemap).
+    struct SiteFiles {
+        var robots: Robots?
+        var llmsOK = false
+        var sitemapOK = false
+        var sitemapBodies: [String] = []   // contenus XML déjà téléchargés
+        var sitemapURLs: [URL] = []        // adresses à essayer, dans l'ordre
+    }
 
-        let origin = URL(string: "/", relativeTo: page.finalURL)!.absoluteURL
-        func at(_ p: String) -> URL { URL(string: p, relativeTo: origin)!.absoluteURL }
-        async let robotsF = fetch(at("/robots.txt"))
-        async let llmsF = fetch(at("/llms.txt"))
-        async let sitemapF = fetch(at("/sitemap.xml"))
+    func loadSiteFiles(for finalURL: URL) async -> SiteFiles {
+        let origin = URL(string: "/", relativeTo: finalURL)!.absoluteURL
+        let robotsURL = URL(string: "/robots.txt", relativeTo: origin)!.absoluteURL
+        let llmsURL = URL(string: "/llms.txt", relativeTo: origin)!.absoluteURL
+        let defaultSitemap = URL(string: "/sitemap.xml", relativeTo: origin)!.absoluteURL
+        async let robotsF = fetch(robotsURL)
+        async let llmsF = fetch(llmsURL)
+        async let sitemapF = fetch(defaultSitemap)
         let robotsRes = await robotsF
         let llmsRes = await llmsF
         let sitemapRes = await sitemapF
 
-        let host = page.finalURL.host ?? ""
-        let doc = HTMLDoc(page.body, host: host)
-
-        var robots: Robots?
-        if let r = robotsRes, r.status == 200, !r.body.lowercased().contains("<html") { robots = Robots(r.body) }
-        var llmsOK = false
-        if let l = llmsRes, l.status == 200, !l.body.lowercased().contains("<html"), l.body.count > 20 { llmsOK = true }
+        var files = SiteFiles()
+        if let r = robotsRes, r.status == 200, !r.body.lowercased().contains("<html") { files.robots = Robots(r.body) }
+        if let l = llmsRes, l.status == 200, !l.body.lowercased().contains("<html"), l.body.count > 20 { files.llmsOK = true }
         func looksLikeSitemap(_ f: Fetched?) -> Bool {
             guard let f = f, f.status == 200 else { return false }
             let b = f.body.lowercased()
             return b.contains("<urlset") || b.contains("<sitemapindex")
         }
-        let sitemapOK = looksLikeSitemap(sitemapRes) || !(robots?.sitemaps.isEmpty ?? true)
+        let declared = (files.robots?.sitemaps ?? []).compactMap { URL(string: $0) }
+        files.sitemapOK = looksLikeSitemap(sitemapRes) || !declared.isEmpty
+        files.sitemapURLs = declared.isEmpty ? [defaultSitemap] : declared
+        if looksLikeSitemap(sitemapRes), let b = sitemapRes?.body, declared.isEmpty { files.sitemapBodies = [b] }
+        return files
+    }
+
+    func run(_ input: String) async throws -> Report {
+        guard let url = Analyzer.normalize(input) else { throw AnalyzerError.invalidURL }
+        guard let page = await fetch(url) else { throw AnalyzerError.unreachable }
+        let files = await loadSiteFiles(for: page.finalURL)
+        return analyzePage(page, files: files, input: input)
+    }
+
+    func analyzePage(_ page: Fetched, files: SiteFiles, input: String) -> Report {
+        let host = page.finalURL.host ?? ""
+        let doc = HTMLDoc(page.body, host: host)
+        let robots = files.robots
+        let llmsOK = files.llmsOK
+        let sitemapOK = files.sitemapOK
+        let pagePath = page.finalURL.path.isEmpty ? "/" : page.finalURL.path
 
         var checks: [Check] = []
         func add(_ p: Pillar, _ t: String, _ s: Status, _ d: String, _ a: String? = nil, w: Int = 2) {
@@ -259,7 +285,7 @@ struct Analyzer {
 
         // ---------- Accès IA ----------
         for bot in aiBots {
-            let allowed = robots?.allowed(agent: bot.token) ?? true
+            let allowed = robots?.allowed(agent: bot.token, path: pagePath) ?? true
             switch bot.kind {
             case .search, .assistant:
                 add(.ia, bot.token, allowed ? .ok : .fail,
@@ -271,8 +297,8 @@ struct Analyzer {
             }
         }
 
-        let gAllowed = robots?.allowed(agent: "Googlebot") ?? true
-        let bAllowed = robots?.allowed(agent: "Bingbot") ?? true
+        let gAllowed = robots?.allowed(agent: "Googlebot", path: pagePath) ?? true
+        let bAllowed = robots?.allowed(agent: "Bingbot", path: pagePath) ?? true
         add(.ia, "Googlebot et Bingbot", gAllowed && bAllowed ? .ok : .fail,
             gAllowed && bAllowed ? "Autorisés. Bing alimente plusieurs moteurs IA." : "Un des deux est bloqué : vos pages risquent aussi de disparaître des réponses IA.",
             gAllowed && bAllowed ? nil : "Autorisez Googlebot et Bingbot dans robots.txt.", w: 4)

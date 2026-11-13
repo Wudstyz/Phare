@@ -22,9 +22,20 @@ Phare est une app Mac gratuite qui analyse un site web sur trois axes :
 
 Vous obtenez 3 scores sur 100, un score global, et une liste de **priorités** avec le conseil pour chaque point. Le rapport s'exporte en Markdown.
 
+Deux modes, au choix en haut de la fenêtre :
+
+- **Une page** : analyse l'adresse indiquée.
+- **Tout le site** : lit le `sitemap.xml`, analyse un échantillon de pages (20, 50, 100 ou 200 au maximum) et affiche un **tableau classé de la page la plus faible à la meilleure**. Un clic sur une ligne ouvre l'analyse détaillée de la page. L'onglet **Problèmes récurrents** liste ce qui revient sur plusieurs pages, y compris les titres en double.
+
 L'analyse se fait **depuis votre Mac** : aucune donnée n'est envoyée à un service tiers.
 
 ## Captures
+
+**Tout le site : tableau des pages, de la plus faible à la meilleure, puis détail d'une page**
+
+| Tableau | Détail d'une page |
+|---|---|
+| <img src="docs/screenshots/06-site-pages.png"> | <img src="docs/screenshots/07-page-detail.png"> |
 
 | SEO | GSO |
 |---|---|
@@ -54,12 +65,14 @@ Rien d'autre à installer.
 ## Compatibilité et limites connues
 
 - Mac Apple Silicon (arm64). Le programme est compilé pour macOS 13 minimum, mais **testé uniquement sur macOS 26** (un seul Mac).
-- Phare analyse **la page indiquée** (en général l'accueil) et les fichiers `robots.txt`, `sitemap.xml`, `llms.txt`. Il n'explore pas tout le site.
+- En mode « Une page », Phare analyse **la page indiquée** et les fichiers `robots.txt`, `sitemap.xml`, `llms.txt`.
+- En mode « Tout le site », les pages viennent **du sitemap uniquement** (Phare ne suit pas les liens) : sans sitemap exploitable, le mode s'arrête avec un message. Au-delà du maximum choisi, un échantillon réparti sur la liste est analysé, pas toutes les pages. Les requêtes sont limitées (4 à la fois, avec une courte pause) pour ne pas surcharger le site.
+- Les contrôles de `robots.txt` et `llms.txt` sont communs à tout le site : ils apparaissent donc sur chaque page.
 - Il lit le HTML **brut**, sans exécuter JavaScript, comme le font la plupart des robots d'IA. Un site entièrement construit en JavaScript aura donc peu de contenu visible : c'est voulu, et signalé.
 - Phare **n'interroge pas** ChatGPT, Claude ou Gemini pour savoir si votre site y est cité. Les scores sont des **indicateurs de bonnes pratiques**, pas une garantie de visibilité.
 - `llms.txt` est un standard émergent : aucune IA ne garantit l'utiliser.
 - Les règles de `robots.txt` sont interprétées de façon simple (préfixes, `*`, `$`) ; les cas très particuliers peuvent différer.
-- Le mode démo et la lecture d'un vrai site (`example.com`) ont été testés ; les autres sites réels, non.
+- Le mode démo (une page et tout le site) et la lecture d'un vrai site en mode « Une page » (`example.com`) ont été testés ; le mode « Tout le site » a été essayé sur un vrai site (6 pages d'un sitemap de 84), pas sur de gros sites ni avec des sitemaps très volumineux.
 
 ## Construire depuis les sources
 
@@ -83,6 +96,7 @@ build/Phare.app/Contents/MacOS/Phare --cli https://example.com
 |---|---|
 | `Sources/Phare/Analyzer.swift` | Toutes les vérifications SEO / GSO / Accès IA, récupération réseau |
 | `Sources/Phare/HTMLDoc.swift` | Lecture du HTML, du JSON-LD et de `robots.txt` |
+| `Sources/Phare/Site.swift` | Mode « Tout le site » : lecture du sitemap, analyse de plusieurs pages, classement |
 | `Sources/Phare/Models.swift` | Scores, rapport, export Markdown |
 | `Sources/Phare/Views.swift` | Interface SwiftUI (thème clair) |
 | `Sources/Phare/DemoData.swift` | Site fictif du mode démo |

@@ -22,9 +22,20 @@ Phare is a free Mac app that audits a website on three axes:
 
 You get three scores out of 100, a global score and a **priority list** with advice for each item. Reports export to Markdown.
 
+Two modes, chosen at the top of the window:
+
+- **Une page** (one page): analyses the given address.
+- **Tout le site** (whole site): reads `sitemap.xml`, analyses a sample of pages (up to 20, 50, 100 or 200) and shows a **table ranked from the weakest page to the best**. Click a row to open that page's detailed analysis. The **Problèmes récurrents** tab lists issues repeated across pages, including duplicate titles.
+
 The analysis runs **on your Mac**: nothing is sent to a third-party service. The interface is in French.
 
 ## Screenshots
+
+**Whole site: table of pages, weakest first, then one page in detail**
+
+| Table | Page detail |
+|---|---|
+| <img src="docs/screenshots/06-site-pages.png"> | <img src="docs/screenshots/07-page-detail.png"> |
 
 | SEO | GSO |
 |---|---|
@@ -54,12 +65,14 @@ Nothing else to install.
 ## Compatibility and known limits
 
 - Apple Silicon Macs (arm64). Built for macOS 13+, but **only tested on macOS 26** (a single Mac).
-- Phare analyses **the given page** (usually the home page) plus `robots.txt`, `sitemap.xml` and `llms.txt`. It does not crawl the whole site.
+- In "Une page" mode, Phare analyses **the given page** plus `robots.txt`, `sitemap.xml` and `llms.txt`.
+- In "Tout le site" mode, pages come **from the sitemap only** (Phare does not follow links): without a usable sitemap the mode stops with a message. Above the chosen maximum, an evenly spread sample is analysed, not every page. Requests are throttled (4 at a time, with a short pause) to avoid overloading the site.
+- `robots.txt` and `llms.txt` checks are site-wide, so they show up on every page.
 - It reads **raw HTML** without running JavaScript, like most AI crawlers. A fully JavaScript-rendered site will show little content; this is intentional and flagged.
 - Phare does **not** query ChatGPT, Claude or Gemini to check whether your site is cited. Scores are **best-practice indicators**, not a visibility guarantee.
 - `llms.txt` is an emerging standard; no AI vendor guarantees to use it.
 - `robots.txt` rules are interpreted simply (prefixes, `*`, `$`); edge cases may differ.
-- Demo mode and a live read of `example.com` were tested; other real sites were not.
+- Demo mode (single page and whole site) and a live single-page read of `example.com` were tested; whole-site mode was tried on one real site (6 pages of an 84-page sitemap), not on large sites or very large sitemaps.
 
 ## Build from source
 
@@ -83,6 +96,7 @@ build/Phare.app/Contents/MacOS/Phare --cli https://example.com
 |---|---|
 | `Sources/Phare/Analyzer.swift` | All SEO / GSO / AI-access checks, networking |
 | `Sources/Phare/HTMLDoc.swift` | HTML, JSON-LD and `robots.txt` parsing |
+| `Sources/Phare/Site.swift` | "Tout le site" mode: sitemap reading, multi-page analysis, ranking |
 | `Sources/Phare/Models.swift` | Scores, report, Markdown export |
 | `Sources/Phare/Views.swift` | SwiftUI interface (light theme) |
 | `Sources/Phare/DemoData.swift` | Fictional demo site |
