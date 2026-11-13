@@ -26,7 +26,12 @@ if args.contains("--cli") {
                 } else if demo {
                     bl = BacklinkParser.parse(files: DemoData.backlinkFiles)
                 }
-                print(r.markdown(backlinks: bl))
+                if let e = args.first(where: { $0.hasPrefix("--export=") }) {
+                    let dir = try SiteExporter.write(site: r, backlinks: bl, into: URL(fileURLWithPath: String(e.dropFirst(9))))
+                    print("Export écrit dans : \(dir.path)")
+                } else {
+                    print(r.markdown(backlinks: bl))
+                }
             } else {
                 print(try await a.run(input).markdown())
             }

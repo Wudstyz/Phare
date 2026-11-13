@@ -63,6 +63,7 @@ final class AppModel: ObservableObject {
     @Published var tab: Tab = .priorities
     @Published var siteTab: SiteTab = .pages
     @Published var backlinks: BacklinkData?
+    @Published var exportNotice: String?
 
     func analyze() { start(demo: false) }
 
@@ -79,6 +80,25 @@ final class AppModel: ObservableObject {
 
     func clearBacklinks() { backlinks = nil }
 
+    private func exportSite(_ s: SiteReport) {
+        let panel = NSOpenPanel()
+        panel.title = "Exporter le rapport complet"
+        panel.message = "Choisissez où créer le dossier d'export (rapport global, un rapport par page, tableaux CSV)."
+        panel.prompt = "Exporter ici"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let parent = panel.url else { return }
+        do {
+            let dir = try SiteExporter.write(site: s, backlinks: backlinks, into: parent)
+            exportNotice = "Export créé : « \(dir.lastPathComponent) » (\(s.pages.count) rapports de page + rapport global + 2 tableaux CSV)."
+            NSWorkspace.shared.activateFileViewerSelecting([dir])
+        } catch {
+            errorMessage = "L'export a échoué : \(error.localizedDescription)"
+        }
+    }
+
     func demo() {
         urlText = DemoData.url
         start(demo: true)
@@ -92,6 +112,7 @@ final class AppModel: ObservableObject {
     private func start(demo: Bool) {
         guard !running else { return }
         errorMessage = nil
+        exportNotice = nil
         running = true
         progress = nil
         let input = urlText
@@ -124,15 +145,22 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Site entier : dossier complet (global + une page par fichier + CSV). Page ouverte depuis le tableau : son rapport détaillé.
+    /// Analyse d'une seule page : un fichier Markdown.
     func export() {
+        errorMessage = nil
+        exportNotice = nil
         let text: String
         let name: String
-        if let d = detail?.report ?? report {
+        if let s = site, let d = detail {
+            text = s.pageMarkdown(d, backlinks: backlinks, back: nil)
+            name = "rapport-phare-\(SiteExporter.slug(d.path)).md"
+        } else if let s = site {
+            exportSite(s)
+            return
+        } else if let d = report {
             text = d.markdown()
             name = "rapport-phare.md"
-        } else if let s = site {
-            text = s.markdown(backlinks: backlinks)
-            name = "rapport-phare-site.md"
         } else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.plainText]
@@ -363,7 +391,7 @@ struct ContentView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                Button("Exporter le rapport…") { model.export() }
+                Button(model.detail != nil ? "Exporter cette page…" : "Exporter le rapport…") { model.export() }
             }
             .padding(.horizontal, 20).padding(.bottom, 10)
 
@@ -432,7 +460,8 @@ struct ContentView: View {
                 .labelsHidden()
                 .frame(maxWidth: 560)
                 Spacer()
-                Button("Exporter le rapport…") { model.export() }
+                Button("Exporter le dossier complet…") { model.export() }
+                    .help("Crée un dossier : rapport global, un rapport détaillé par page, et deux tableaux CSV (Excel).")
             }
             .padding(.horizontal, 20).padding(.bottom, 6)
 
@@ -441,6 +470,9 @@ struct ContentView: View {
                  + (s.isDemo ? " · mode démo (site fictif)" : ""))
                 .font(.caption).foregroundColor(Theme.muted).padding(.bottom, 8)
 
+            if let n = model.exportNotice {
+                Text(n).font(.caption).foregroundColor(Theme.ok).padding(.bottom, 6)
+            }
             if let e = model.errorMessage {
                 Text(e).foregroundColor(Theme.fail).padding(.bottom, 6)
             }

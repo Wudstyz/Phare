@@ -32,6 +32,15 @@ Whole-site mode adds two more tabs:
 - **Maillage** (internal linking): broken links, links going through a redirect, orphan pages (nothing links to them), pages more than 3 clicks from the home page, empty or generic link texts ("click here"). Phare also checks up to 100 linked-but-not-analysed addresses. The "Entrants" (inbound) column in the table shows how many pages link to each page.
 - **Backlinks**: import the "External links" export from **Google Search Console** (free, for your own site) to see who links to you, your most linked pages and anchor texts. A fictional sample is in [`examples/`](examples).
 
+**Detailed export**: in whole-site mode, **Exporter le dossier complet…** creates a folder containing:
+
+- `00-rapport-global.md`: site summary (average scores, recurring issues, internal linking, backlinks, page table linking to each report);
+- `pages/`: **one detailed report per page** (full SEO / GSO / AI-access analysis, priorities, technical sheet, place in the site, linking: who links to the page, where it links, broken links);
+- `pages.csv` and `problemes-par-page.csv`: spreadsheets for Excel or Numbers (one row per page, and one row per issue per page);
+- `LISEZ-MOI.md`: explains the folder.
+
+From the table, when you open one page, **Exporter cette page…** exports only that page's detailed report.
+
 Every report also reminds you that backlinks are not measured by a single-page analysis, with a pointer on how to build them.
 
 The analysis runs **on your Mac**: nothing is sent to a third-party service. The interface is in French.
@@ -108,6 +117,7 @@ build/Phare.app/Contents/MacOS/Phare --cli https://example.com
 | `Sources/Phare/Analyzer.swift` | All SEO / GSO / AI-access checks, networking |
 | `Sources/Phare/HTMLDoc.swift` | HTML, JSON-LD and `robots.txt` parsing |
 | `Sources/Phare/Site.swift` | "Tout le site" mode: sitemap reading, multi-page analysis, ranking |
+| `Sources/Phare/Export.swift` | Folder export: global report, one report per page, CSV |
 | `Sources/Phare/Backlinks.swift` | Google Search Console export reader (CSV / zip) |
 | `Sources/Phare/Models.swift` | Scores, report, Markdown export |
 | `Sources/Phare/Views.swift` | SwiftUI interface (light theme) |

@@ -32,6 +32,15 @@ En mode « Tout le site », deux onglets de plus :
 - **Maillage** : audit des liens internes. Liens cassés, liens qui passent par une redirection, pages orphelines (aucun lien ne mène vers elles), pages à plus de 3 clics de l'accueil, textes de lien vides ou génériques (« cliquez ici »). Phare vérifie aussi jusqu'à 100 adresses liées mais non analysées. La colonne « Entrants » du tableau donne le nombre de pages qui pointent vers chaque page.
 - **Backlinks** : importez l'export « Liens externes » de **Google Search Console** (gratuit, pour votre propre site) pour voir les sites qui vous citent, vos pages les plus liées et les textes d'ancrage. Un fichier d'essai fictif est dans [`examples/`](examples).
 
+**Export détaillé** : en mode « Tout le site », **Exporter le dossier complet…** crée un dossier contenant :
+
+- `00-rapport-global.md` : synthèse du site (scores moyens, problèmes récurrents, maillage, backlinks, tableau des pages avec un lien vers chaque rapport) ;
+- `pages/` : **un rapport détaillé par page** (analyse SEO / GSO / Accès IA complète, priorités, fiche technique, place dans le site, maillage : qui pointe vers la page, vers où elle pointe, liens cassés) ;
+- `pages.csv` et `problemes-par-page.csv` : tableaux pour Excel ou Numbers (une ligne par page, et une ligne par problème et par page) ;
+- `LISEZ-MOI.md` : explique le contenu du dossier.
+
+Depuis le tableau, quand vous ouvrez une page, **Exporter cette page…** n'exporte que son rapport détaillé.
+
 Chaque rapport rappelle aussi que les backlinks ne sont pas mesurés par l'analyse d'une page seule, avec une piste pour les travailler.
 
 L'analyse se fait **depuis votre Mac** : aucune donnée n'est envoyée à un service tiers.
@@ -108,6 +117,7 @@ build/Phare.app/Contents/MacOS/Phare --cli https://example.com
 | `Sources/Phare/Analyzer.swift` | Toutes les vérifications SEO / GSO / Accès IA, récupération réseau |
 | `Sources/Phare/HTMLDoc.swift` | Lecture du HTML, du JSON-LD et de `robots.txt` |
 | `Sources/Phare/Site.swift` | Mode « Tout le site » : lecture du sitemap, analyse de plusieurs pages, classement |
+| `Sources/Phare/Export.swift` | Export en dossier : rapport global, un rapport par page, CSV |
 | `Sources/Phare/Backlinks.swift` | Lecture de l'export Google Search Console (CSV / zip) |
 | `Sources/Phare/Models.swift` | Scores, rapport, export Markdown |
 | `Sources/Phare/Views.swift` | Interface SwiftUI (thème clair) |

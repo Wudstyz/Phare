@@ -68,6 +68,8 @@ struct LinkingAudit {
     var totalLinks = 0
     var distinctTargets = 0
     var inbound: [String: Int] = [:]
+    var inboundFrom: [String: [String]] = [:]   // page (clé) → pages qui pointent vers elle
+    var depth: [String: Int] = [:]              // page (clé) → clics depuis l'accueil
     var orphans: [PageRef] = []
     var orphansConfirmed = false
     var deep: [DeepPage] = []
@@ -133,6 +135,7 @@ struct LinkingAudit {
         }
         a.distinctTargets = rawSources.count
         a.inbound = inboundSources.mapValues { $0.count }
+        a.inboundFrom = inboundSources.mapValues { $0.sorted() }
         a.emptyAnchorSources = emptySources.sorted()
         a.weakAnchorTotal = weak.values.reduce(0) { $0 + $1.count }
         a.weakAnchors = weak.map { AnchorIssue(text: $0.key, count: $0.value.count, examples: Array($0.value.sources.sorted().prefix(3))) }
@@ -174,6 +177,7 @@ struct LinkingAudit {
             }
         }
         a.maxDepth = depth.values.max() ?? 0
+        a.depth = depth
         for p in analyzed {
             if let d = depth[p.key] {
                 if d > 3 { a.deep.append(DeepPage(ref: PageRef(path: p.path, key: p.key), depth: d)) }
@@ -238,7 +242,7 @@ struct SiteReport {
             .sorted { $0.paths.count > $1.paths.count }
     }
 
-    func markdown(backlinks: BacklinkData? = nil) -> String {
+    func markdown(backlinks: BacklinkData? = nil, pageFiles: [UUID: String] = [:]) -> String {
         var out = "# Rapport Phare — site entier\n\n"
         out += "- Site : \(rootURL)\n"
         let f = DateFormatter()
@@ -297,7 +301,8 @@ struct SiteReport {
 
         out += "\n## Pages (de la plus faible à la meilleure)\n\n| Score | SEO | GSO | Accès IA | Liens entrants | Page |\n|---|---|---|---|---|---|\n"
         for p in pages {
-            out += "| \(p.score) | \(p.report.score(.seo)) | \(p.report.score(.gso)) | \(p.report.score(.ia)) | \(inbound(p)) | \(p.path) |\n"
+            let label = pageFiles[p.id].map { "[\(p.path)](\($0))" } ?? p.path
+            out += "| \(p.score) | \(p.report.score(.seo)) | \(p.report.score(.gso)) | \(p.report.score(.ia)) | \(inbound(p)) | \(label) |\n"
         }
         return out
     }
