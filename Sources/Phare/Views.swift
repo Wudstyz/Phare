@@ -466,6 +466,7 @@ struct ContentView: View {
                     }
                     tabContent(r)
                 }
+                .id("\(model.tab.rawValue)-\(model.detail?.id.uuidString ?? "")")
                 .padding(.horizontal, 20).padding(.bottom, 20)
             }
         }
@@ -545,6 +546,7 @@ struct ContentView: View {
                     case .backlinks: backlinksView(s)
                     }
                 }
+                .id(model.siteTab.rawValue)
                 .padding(.horizontal, 20).padding(.bottom, 20)
             }
         }

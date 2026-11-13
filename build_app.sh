@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 APP="build/Phare.app"
-VERSION="1.4"
+VERSION="1.5"
 
 echo "→ Icône"
 swift tools/make_icon.swift assets/icon.png
