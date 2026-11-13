@@ -44,6 +44,8 @@ enum Tab: String, CaseIterable, Identifiable {
 enum SiteTab: String, CaseIterable, Identifiable {
     case pages = "Pages"
     case recurring = "Problèmes récurrents"
+    case linking = "Maillage"
+    case backlinks = "Backlinks"
     var id: String { rawValue }
 }
 
@@ -60,8 +62,22 @@ final class AppModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var tab: Tab = .priorities
     @Published var siteTab: SiteTab = .pages
+    @Published var backlinks: BacklinkData?
 
     func analyze() { start(demo: false) }
+
+    func importBacklinks() {
+        let panel = NSOpenPanel()
+        panel.title = "Choisir l'export « Liens externes » de Google Search Console"
+        panel.message = "Un ou plusieurs fichiers .csv, ou le .zip téléchargé."
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.commaSeparatedText, .zip, .plainText]
+        guard panel.runModal() == .OK else { return }
+        backlinks = BacklinkParser.load(urls: panel.urls)
+    }
+
+    func clearBacklinks() { backlinks = nil }
 
     func demo() {
         urlText = DemoData.url
@@ -92,6 +108,7 @@ final class AppModel: ObservableObject {
                     report = nil
                     detail = nil
                     siteTab = .pages
+                    backlinks = demo ? BacklinkParser.parse(files: DemoData.backlinkFiles) : nil
                 } else {
                     let r = try await analyzer.run(input)
                     report = r
@@ -114,7 +131,7 @@ final class AppModel: ObservableObject {
             text = d.markdown()
             name = "rapport-phare.md"
         } else if let s = site {
-            text = s.markdown()
+            text = s.markdown(backlinks: backlinks)
             name = "rapport-phare-site.md"
         } else { return }
         let panel = NSSavePanel()
@@ -397,7 +414,7 @@ struct ContentView: View {
 
     // MARK: Tout le site
 
-    private func siteView(_ s: SiteReport) -> some View {
+    fileprivate func siteView(_ s: SiteReport) -> some View {
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 8) {
                 ScoreRing(title: "Score moyen", subtitle: Report.grade(s.globalScore), score: s.globalScore, big: true)
@@ -413,7 +430,7 @@ struct ContentView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(maxWidth: 420)
+                .frame(maxWidth: 560)
                 Spacer()
                 Button("Exporter le rapport…") { model.export() }
             }
@@ -433,6 +450,8 @@ struct ContentView: View {
                     switch model.siteTab {
                     case .pages: pagesTable(s)
                     case .recurring: recurringList(s)
+                    case .linking: linkingView(s)
+                    case .backlinks: backlinksView(s)
                     }
                 }
                 .padding(.horizontal, 20).padding(.bottom, 20)
@@ -461,6 +480,7 @@ struct ContentView: View {
             headerCell("SEO", width: 52)
             headerCell("GSO", width: 52)
             headerCell("Accès IA", width: 62)
+            headerCell("Entrants", width: 56)
             headerCell("À corriger", width: 80)
             Spacer().frame(width: 24)
         }
@@ -488,6 +508,10 @@ struct ContentView: View {
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundColor(Theme.score(p.report.score(.ia)))
                         .frame(width: 62)
+                    Text("\(s.inbound(p))")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundColor(s.inbound(p) == 0 && p.key != Analyzer.key(URL(string: s.rootURL)!) ? Theme.fail : Theme.navy)
+                        .frame(width: 56)
                     Text("\(p.failCount) pb · \(p.warnCount) à améliorer")
                         .font(.caption2).foregroundColor(Theme.muted)
                         .frame(width: 80)
@@ -540,6 +564,243 @@ struct ContentView: View {
                 Spacer(minLength: 0)
             }
             .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.card)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.black.opacity(0.06)))
+        }
+    }
+}
+
+struct InfoCard: View {
+    let status: Status
+    let title: String
+    var detail: String?
+    var advice: String?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: Theme.symbol(status)).foregroundColor(Theme.status(status)).font(.title3).frame(width: 24)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.system(size: 14, weight: .semibold)).foregroundColor(Theme.navy)
+                if let d = detail { Text(d).font(.system(size: 13)).foregroundColor(Theme.muted) }
+                if let a = advice { Text("→ \(a)").font(.system(size: 13)).foregroundColor(Theme.navy) }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.black.opacity(0.06)))
+    }
+}
+
+struct StatTile: View {
+    let value: String
+    let label: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text(value).font(.system(size: 28, weight: .bold, design: .rounded)).foregroundColor(color)
+            Text(label).font(.caption).foregroundColor(Theme.muted).multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(Theme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.black.opacity(0.06)))
+    }
+}
+
+struct CountList: View {
+    let title: String
+    let items: [CountedItem]
+    var flagGeneric = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title).font(.system(size: 14, weight: .semibold)).foregroundColor(Theme.navy).padding(12)
+            ForEach(items.prefix(10)) { it in
+                Divider()
+                HStack {
+                    Text(it.name).font(.system(size: 13)).foregroundColor(Theme.navy).lineLimit(1).truncationMode(.middle)
+                    if flagGeneric && isGenericAnchor(it.name) {
+                        Text("générique").font(.caption2.bold()).foregroundColor(Theme.warn)
+                    }
+                    Spacer()
+                    Text("\(it.count)").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundColor(Theme.navy)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.black.opacity(0.06)))
+    }
+}
+
+extension ContentView {
+    private func sectionTitle(_ t: String) -> some View {
+        Text(t).font(.system(size: 15, weight: .bold)).foregroundColor(Theme.navy)
+            .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 10)
+    }
+
+    private func more(_ n: Int, limit: Int = 30) -> some View {
+        Group {
+            if n > limit {
+                Text("… et \(n - limit) autre(s). Le rapport exporté les liste toutes.")
+                    .font(.caption).foregroundColor(Theme.muted)
+            }
+        }
+    }
+
+    private func pathString(_ url: String) -> String {
+        URL(string: url).map { Analyzer.pathOf($0) } ?? url
+    }
+
+    @ViewBuilder
+    func linkingView(_ s: SiteReport) -> some View {
+        let l = s.linking
+        HStack(spacing: 10) {
+            StatTile(value: "\(l.broken.count)", label: "liens cassés", color: l.broken.isEmpty ? Theme.ok : Theme.fail)
+            StatTile(value: "\(l.orphans.count)", label: l.orphansConfirmed ? "pages orphelines" : "pages sans lien entrant",
+                     color: l.orphans.isEmpty ? Theme.ok : Theme.warn)
+            StatTile(value: "\(l.maxDepth)", label: "clics max depuis l'accueil", color: l.maxDepth > 3 ? Theme.warn : Theme.ok)
+            StatTile(value: "\(l.weakAnchorTotal + l.emptyAnchorCount)", label: "textes de lien faibles",
+                     color: l.weakAnchorTotal + l.emptyAnchorCount == 0 ? Theme.ok : Theme.warn)
+        }
+        Text("\(l.totalLinks) liens internes trouvés dans les pages analysées, vers \(l.distinctTargets) adresses. "
+             + "\(l.verifiedTargets) adresse(s) liée(s) mais non analysée(s) vérifiée(s)"
+             + (l.notVerified > 0 ? " (\(l.notVerified) non vérifiées : limite de 100)." : "."))
+            .font(.caption).foregroundColor(Theme.muted).frame(maxWidth: .infinity, alignment: .leading)
+
+        sectionTitle("Liens cassés")
+        if l.broken.isEmpty {
+            InfoCard(status: .ok, title: "Aucun lien interne cassé trouvé")
+        } else {
+            ForEach(l.broken.prefix(30)) { b in
+                InfoCard(status: .fail,
+                         title: "\(pathString(b.url)) — \(b.status.map { "erreur \($0)" } ?? "injoignable")",
+                         detail: b.sources.isEmpty ? "Présente dans le sitemap, mais la page ne répond pas."
+                                                   : "Lien trouvé sur : " + b.sources.prefix(5).joined(separator: ", ") + (b.sources.count > 5 ? "…" : ""),
+                         advice: "Corrigez le lien, ou redirigez l'ancienne adresse vers une page qui existe.")
+            }
+            more(l.broken.count)
+        }
+
+        sectionTitle(l.orphansConfirmed ? "Pages orphelines (aucun lien interne ne mène vers elles)" : "Pages sans lien entrant (parmi les pages analysées)")
+        if l.orphans.isEmpty {
+            InfoCard(status: .ok, title: "Toutes les pages analysées reçoivent au moins un lien interne")
+        } else {
+            ForEach(l.orphans.prefix(30)) { o in
+                InfoCard(status: .warn, title: o.path,
+                         detail: l.orphansConfirmed ? "Dans le sitemap, mais aucune page analysée ne pointe vers elle."
+                                                    : "Aucune des pages analysées ne pointe vers elle (à confirmer en analysant plus de pages).",
+                         advice: "Ajoutez un lien depuis une page pertinente, ou retirez-la du sitemap si elle est obsolète.")
+            }
+            more(l.orphans.count)
+        }
+
+        sectionTitle("Liens qui passent par une redirection")
+        if l.redirects.isEmpty {
+            InfoCard(status: .ok, title: "Aucun lien interne vers une adresse redirigée")
+        } else {
+            ForEach(l.redirects.prefix(30)) { r in
+                InfoCard(status: .warn, title: "\(r.from) → \(r.to)",
+                         detail: "Lien trouvé sur : " + r.sources.prefix(5).joined(separator: ", "),
+                         advice: "Pointez directement vers l'adresse finale : plus rapide pour les visiteurs et les robots.")
+            }
+            more(l.redirects.count)
+        }
+
+        sectionTitle("Profondeur : pages à plus de 3 clics de l'accueil")
+        if l.deep.isEmpty && l.unreachable.isEmpty {
+            InfoCard(status: .ok, title: "Toutes les pages analysées sont à 3 clics ou moins de l'accueil")
+        }
+        ForEach(l.deep.prefix(30)) { d in
+            InfoCard(status: .warn, title: "\(d.ref.path) — \(d.depth) clics",
+                     advice: "Rapprochez-la de l'accueil : un lien depuis le menu ou une page de catégorie.")
+        }
+        ForEach(l.unreachable.prefix(30)) { u in
+            InfoCard(status: .warn, title: "\(u.path) — non atteignable depuis l'accueil",
+                     detail: "Elle reçoit des liens, mais uniquement depuis des pages elles-mêmes inaccessibles par les liens.")
+        }
+
+        sectionTitle("Textes des liens")
+        if l.weakAnchors.isEmpty && l.emptyAnchorCount == 0 {
+            InfoCard(status: .ok, title: "Les liens internes ont des textes descriptifs")
+        }
+        ForEach(l.weakAnchors.prefix(15)) { w in
+            InfoCard(status: .warn, title: "« \(w.text) » — \(w.count) lien(s)",
+                     detail: "Par exemple sur : " + w.examples.joined(separator: ", "),
+                     advice: "Décrivez la page visée (ex. « Nos escaliers en chêne »).")
+        }
+        if l.emptyAnchorCount > 0 {
+            InfoCard(status: .warn, title: "\(l.emptyAnchorCount) lien(s) sans texte (image sans description, par exemple)",
+                     detail: "Par exemple sur : " + l.emptyAnchorSources.prefix(3).joined(separator: ", "),
+                     advice: "Ajoutez un texte, ou un attribut alt sur l'image qui sert de lien.")
+        }
+    }
+
+    @ViewBuilder
+    func backlinksView(_ s: SiteReport) -> some View {
+        if let b = model.backlinks, !b.isEmpty {
+            HStack(spacing: 10) {
+                StatTile(value: "\(b.sites.count)", label: "sites référents", color: Theme.navy)
+                StatTile(value: "\(b.totalLinks)", label: "liens entrants", color: Theme.navy)
+                StatTile(value: "\(b.pages.count)", label: "pages de votre site liées", color: Theme.navy)
+            }
+            Text((s.isDemo ? "Données fictives de démonstration. " : "")
+                 + "Google Search Console ne montre qu'un échantillon des liens (les plus importants) : ces chiffres sont indicatifs.")
+                .font(.caption).foregroundColor(Theme.muted).frame(maxWidth: .infinity, alignment: .leading)
+            if !b.sites.isEmpty { CountList(title: "Sites qui vous font le plus de liens", items: b.sites) }
+            if !b.pages.isEmpty { CountList(title: "Pages de votre site les plus liées", items: b.pages) }
+            if !b.anchors.isEmpty { CountList(title: "Textes utilisés pour vous citer", items: b.anchors, flagGeneric: true) }
+            if !b.pages.isEmpty {
+                sectionTitle("Pages analysées sans aucun backlink connu")
+                let none = s.pages.filter { b.linkCount(forPageKey: $0.key) == 0 }
+                if none.isEmpty {
+                    InfoCard(status: .ok, title: "Toutes les pages analysées apparaissent dans l'export")
+                } else {
+                    ForEach(none.prefix(30)) { p in
+                        InfoCard(status: .info, title: p.path, detail: "Absente de l'export (pas de lien externe connu, ou hors de l'échantillon).")
+                    }
+                    more(none.count)
+                }
+            }
+            if !b.skipped.isEmpty {
+                InfoCard(status: .warn, title: "Fichiers ignorés", detail: b.skipped.joined(separator: "\n"))
+            }
+            HStack {
+                Button("Importer d'autres fichiers…") { model.importBacklinks() }
+                Button("Retirer les données") { model.clearBacklinks() }
+                Spacer()
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Mesurer vos backlinks").font(.system(size: 16, weight: .bold)).foregroundColor(Theme.navy)
+                Text("Les backlinks (liens d'autres sites vers le vôtre) comptent beaucoup pour Google et pour être cité par les IA. Phare ne voit que votre site : il ne peut pas savoir qui vous cite. Google Search Console, gratuit, le sait pour votre propre site.")
+                    .font(.system(size: 13)).foregroundColor(Theme.muted)
+                Text("1. Dans Google Search Console, ouvrez le rapport « Liens » et la partie « Liens externes ».\n2. Pour chaque tableau (sites référents, pages les plus liées, textes d'ancrage), utilisez « Exporter » puis le format CSV (ou téléchargez le .zip).\n3. Importez ici les fichiers : Phare reconnaît chaque tableau à son contenu.")
+                    .font(.system(size: 13)).foregroundColor(Theme.navy)
+                Button {
+                    model.importBacklinks()
+                } label: {
+                    Text("Importer l'export Search Console…").padding(.horizontal, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.teal)
+                if let b = model.backlinks, !b.skipped.isEmpty {
+                    Text("Aucune donnée exploitable. " + b.skipped.joined(separator: " · "))
+                        .font(.caption).foregroundColor(Theme.fail)
+                }
+                Text("Les données restent sur votre Mac. Seuls les liens vers votre propre site sont concernés (l'export « Liens internes » est ignoré).")
+                    .font(.caption).foregroundColor(Theme.muted)
+            }
+            .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.card)
             .clipShape(RoundedRectangle(cornerRadius: 10))

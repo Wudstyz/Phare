@@ -5,17 +5,10 @@ struct PageResult: Identifiable {
     let report: Report
 
     var url: String { report.finalURL }
-    var path: String {
-        guard let u = URL(string: url) else { return url }
-        var p = u.path.isEmpty ? "/" : u.path
-        if let q = u.query { p += "?" + q }
-        return p
-    }
+    var key: String { URL(string: url).map { Analyzer.key($0) } ?? url }
+    var path: String { URL(string: url).map { Analyzer.pathOf($0) } ?? url }
     var score: Int { report.globalScore }
-    var title: String {
-        let t = report.facts.first(where: { $0.label == "Titre" })?.value ?? "—"
-        return t
-    }
+    var title: String { report.facts.first(where: { $0.label == "Titre" })?.value ?? "—" }
     var failCount: Int { report.checks.filter { $0.status == .fail }.count }
     var warnCount: Int { report.checks.filter { $0.status == .warn }.count }
 }
@@ -36,6 +29,165 @@ struct DuplicateTitle: Identifiable {
     let paths: [String]
 }
 
+// MARK: - Audit du maillage interne
+
+struct PageRef: Identifiable {
+    let id = UUID()
+    let path: String
+    let key: String
+}
+
+struct DeepPage: Identifiable {
+    let id = UUID()
+    let ref: PageRef
+    let depth: Int
+}
+
+struct BrokenLink: Identifiable {
+    let id = UUID()
+    let url: String
+    let status: Int?          // nil = injoignable
+    let sources: [String]     // pages où le lien a été trouvé (vide = vient du sitemap)
+}
+
+struct RedirectLink: Identifiable {
+    let id = UUID()
+    let from: String
+    let to: String
+    let sources: [String]
+}
+
+struct AnchorIssue: Identifiable {
+    let id = UUID()
+    let text: String
+    let count: Int
+    let examples: [String]
+}
+
+struct LinkingAudit {
+    var totalLinks = 0
+    var distinctTargets = 0
+    var inbound: [String: Int] = [:]
+    var orphans: [PageRef] = []
+    var orphansConfirmed = false
+    var deep: [DeepPage] = []
+    var unreachable: [PageRef] = []
+    var maxDepth = 0
+    var weakAnchors: [AnchorIssue] = []
+    var weakAnchorTotal = 0
+    var emptyAnchorCount = 0
+    var emptyAnchorSources: [String] = []
+    var broken: [BrokenLink] = []
+    var redirects: [RedirectLink] = []
+    var verifiedTargets = 0
+    var notVerified = 0
+
+    static func build(reports: [Report], homeKey: String, redirectMap: [String: String], failed: [String: Int],
+                      urlByKey: [String: URL], complete: Bool, verified: Int, notVerified: Int) -> LinkingAudit {
+        var a = LinkingAudit()
+        a.verifiedTargets = verified
+        a.notVerified = notVerified
+        a.orphansConfirmed = complete
+
+        func canon(_ k: String) -> String { redirectMap[k] ?? k }
+        func pathOf(_ k: String) -> String {
+            if let u = urlByKey[k] { return Analyzer.pathOf(u) }
+            if let i = k.firstIndex(of: "/") { return String(k[i...]) }
+            return k
+        }
+
+        let analyzed: [(key: String, path: String)] = reports.map { r in
+            let u = URL(string: r.finalURL)!
+            return (Analyzer.key(u), Analyzer.pathOf(u))
+        }
+        let analyzedKeys = Set(analyzed.map { $0.key })
+
+        var inboundSources: [String: Set<String>] = [:]
+        var adj: [String: Set<String>] = [:]
+        var rawSources: [String: Set<String>] = [:]
+        var weak: [String: (count: Int, sources: Set<String>)] = [:]
+        var emptySources = Set<String>()
+
+        for (i, r) in reports.enumerated() {
+            let sk = analyzed[i].key
+            let sp = analyzed[i].path
+            for l in r.outlinks {
+                let raw = Analyzer.key(l.url)
+                let t = canon(raw)
+                if t == sk { continue }
+                a.totalLinks += 1
+                rawSources[raw, default: []].insert(sp)
+                inboundSources[t, default: []].insert(sp)
+                adj[sk, default: []].insert(t)
+                let text = l.anchor.trimmingCharacters(in: .whitespacesAndNewlines)
+                if text.isEmpty {
+                    a.emptyAnchorCount += 1
+                    emptySources.insert(sp)
+                } else if isGenericAnchor(text) {
+                    var e = weak[text.lowercased()] ?? (count: 0, sources: [])
+                    e.count += 1
+                    e.sources.insert(sp)
+                    weak[text.lowercased()] = e
+                }
+            }
+        }
+        a.distinctTargets = rawSources.count
+        a.inbound = inboundSources.mapValues { $0.count }
+        a.emptyAnchorSources = emptySources.sorted()
+        a.weakAnchorTotal = weak.values.reduce(0) { $0 + $1.count }
+        a.weakAnchors = weak.map { AnchorIssue(text: $0.key, count: $0.value.count, examples: Array($0.value.sources.sorted().prefix(3))) }
+            .sorted { $0.count > $1.count }
+
+        // Liens cassés
+        var broken: [BrokenLink] = []
+        for (raw, st) in failed {
+            let src = (rawSources[raw] ?? []).sorted()
+            broken.append(BrokenLink(url: urlByKey[raw]?.absoluteString ?? raw, status: st == 0 ? nil : st, sources: src))
+        }
+        a.broken = broken.sorted {
+            if $0.sources.count != $1.sources.count { return $0.sources.count > $1.sources.count }
+            return $0.url < $1.url
+        }
+
+        // Redirections
+        for (raw, to) in redirectMap {
+            guard let src = rawSources[raw], !src.isEmpty else { continue }
+            a.redirects.append(RedirectLink(from: pathOf(raw), to: pathOf(to), sources: src.sorted()))
+        }
+        a.redirects.sort { $0.sources.count > $1.sources.count }
+
+        // Pages orphelines
+        for p in analyzed where p.key != homeKey && (a.inbound[p.key] ?? 0) == 0 {
+            a.orphans.append(PageRef(path: p.path, key: p.key))
+        }
+
+        // Profondeur de clics depuis l'accueil
+        var depth: [String: Int] = [homeKey: 0]
+        var queue = [homeKey]
+        var qi = 0
+        while qi < queue.count {
+            let k = queue[qi]
+            qi += 1
+            for n in adj[k] ?? [] where analyzedKeys.contains(n) && depth[n] == nil {
+                depth[n] = depth[k]! + 1
+                queue.append(n)
+            }
+        }
+        a.maxDepth = depth.values.max() ?? 0
+        for p in analyzed {
+            if let d = depth[p.key] {
+                if d > 3 { a.deep.append(DeepPage(ref: PageRef(path: p.path, key: p.key), depth: d)) }
+            } else if (a.inbound[p.key] ?? 0) > 0 {
+                a.unreachable.append(PageRef(path: p.path, key: p.key))
+            }
+        }
+        a.deep.sort { $0.depth > $1.depth }
+        return a
+    }
+}
+
+// MARK: - Rapport du site
+
 struct SiteReport {
     let rootURL: String
     let date: Date
@@ -43,6 +195,7 @@ struct SiteReport {
     let sitemapTotal: Int
     let unreachable: Int
     let isDemo: Bool
+    let linking: LinkingAudit
 
     func score(_ p: Pillar) -> Int {
         guard !pages.isEmpty else { return 0 }
@@ -53,6 +206,8 @@ struct SiteReport {
         guard !pages.isEmpty else { return 0 }
         return Int((Double(pages.map { $0.score }.reduce(0, +)) / Double(pages.count)).rounded())
     }
+
+    func inbound(_ p: PageResult) -> Int { linking.inbound[p.key] ?? 0 }
 
     var recurring: [Recurring] {
         struct Acc { var pillar: Pillar; var title: String; var fail = 0; var warn = 0; var advice: String? }
@@ -83,7 +238,7 @@ struct SiteReport {
             .sorted { $0.paths.count > $1.paths.count }
     }
 
-    func markdown() -> String {
+    func markdown(backlinks: BacklinkData? = nil) -> String {
         var out = "# Rapport Phare — site entier\n\n"
         out += "- Site : \(rootURL)\n"
         let f = DateFormatter()
@@ -107,16 +262,58 @@ struct SiteReport {
             if let a = r.advice { out += " → \(a)" }
             out += "\n"
         }
-        out += "\n## Pages (de la plus faible à la meilleure)\n\n| Score | SEO | GSO | Accès IA | Page |\n|---|---|---|---|---|\n"
+
+        let l = linking
+        out += "\n## Maillage interne\n\n"
+        out += "- Liens internes trouvés : \(l.totalLinks) (vers \(l.distinctTargets) adresses distinctes) ; profondeur maximale : \(l.maxDepth) clic(s) depuis l'accueil\n"
+        out += "- Adresses vérifiées en plus des pages analysées : \(l.verifiedTargets)"
+        if l.notVerified > 0 { out += " (\(l.notVerified) non vérifiées : limite de 100)" }
+        out += "\n"
+        out += "- Liens cassés : \(l.broken.count)\n"
+        for b in l.broken { out += "  - \(b.url) — \(b.status.map(String.init) ?? "injoignable")" + (b.sources.isEmpty ? " (présent dans le sitemap)" : " ← \(b.sources.joined(separator: ", "))") + "\n" }
+        out += "- Liens passant par une redirection : \(l.redirects.count)\n"
+        for r in l.redirects { out += "  - \(r.from) → \(r.to) ← \(r.sources.joined(separator: ", "))\n" }
+        out += "- Pages sans lien entrant\(l.orphansConfirmed ? "" : " (parmi les pages analysées, à confirmer)") : \(l.orphans.count)\n"
+        for o in l.orphans { out += "  - \(o.path)\n" }
+        out += "- Pages à plus de 3 clics de l'accueil : \(l.deep.count)\n"
+        for d in l.deep { out += "  - \(d.ref.path) (\(d.depth) clics)\n" }
+        out += "- Textes de lien génériques : \(l.weakAnchorTotal) ; vides : \(l.emptyAnchorCount)\n"
+        for w in l.weakAnchors.prefix(10) { out += "  - « \(w.text) » × \(w.count)\n" }
+
+        if let b = backlinks, !b.isEmpty {
+            out += "\n## Backlinks (import Google Search Console)\n\n"
+            out += "- Sites référents : \(b.sites.count) ; liens entrants : \(b.totalLinks)\n"
+            for s in b.sites.prefix(10) { out += "  - \(s.name) : \(s.count)\n" }
+            if !b.pages.isEmpty {
+                out += "- Pages les plus liées :\n"
+                for p in b.pages.prefix(10) { out += "  - \(p.name) : \(p.count)\n" }
+            }
+            if !b.anchors.isEmpty {
+                out += "- Textes d'ancrage les plus utilisés :\n"
+                for a in b.anchors.prefix(10) { out += "  - « \(a.name) » : \(a.count)\n" }
+            }
+            if !b.skipped.isEmpty { out += "- Fichiers ignorés : \(b.skipped.joined(separator: " ; "))\n" }
+        }
+
+        out += "\n## Pages (de la plus faible à la meilleure)\n\n| Score | SEO | GSO | Accès IA | Liens entrants | Page |\n|---|---|---|---|---|---|\n"
         for p in pages {
-            out += "| \(p.score) | \(p.report.score(.seo)) | \(p.report.score(.gso)) | \(p.report.score(.ia)) | \(p.path) |\n"
+            out += "| \(p.score) | \(p.report.score(.seo)) | \(p.report.score(.gso)) | \(p.report.score(.ia)) | \(inbound(p)) | \(p.path) |\n"
         }
         return out
     }
 }
 
+// MARK: - Analyse de plusieurs pages
+
+private struct Crawl {
+    let requested: URL
+    let report: Report?
+    let status: Int?
+    let finalURL: URL?
+}
+
 extension Analyzer {
-    static let skippedExtensions: Set<String> = ["jpg", "jpeg", "png", "gif", "webp", "svg", "pdf", "xml", "gz", "zip", "mp4", "mp3", "css", "js", "ico"]
+    static let skippedExtensions: Set<String> = ["jpg", "jpeg", "png", "gif", "webp", "svg", "pdf", "xml", "gz", "zip", "mp4", "mp3", "css", "js", "ico", "xsd", "json", "woff", "woff2", "ttf", "rss", "atom"]
 
     static func locs(in xml: String) -> [String] {
         regexMatches(#"<loc>\s*(?:<!\[CDATA\[)?\s*(.*?)\s*(?:\]\]>)?\s*</loc>"#, in: xml, group: 1).map(decodeEntities)
@@ -162,6 +359,12 @@ extension Analyzer {
         return (u.host ?? "").lowercased().replacingOccurrences(of: "www.", with: "") + p + (u.query.map { "?" + $0 } ?? "")
     }
 
+    static func pathOf(_ u: URL) -> String {
+        var p = u.path.isEmpty ? "/" : u.path
+        if let q = u.query { p += "?" + q }
+        return p
+    }
+
     static func sample(_ urls: [URL], max: Int) -> [URL] {
         guard max > 0 else { return [] }
         guard urls.count > max else { return urls }
@@ -169,7 +372,8 @@ extension Analyzer {
         return (0..<max).map { urls[Int(Double($0) * step)] }
     }
 
-    /// Analyse la page d'accueil puis un échantillon de pages du sitemap (4 requêtes à la fois, avec une pause).
+    /// Analyse la page d'accueil puis un échantillon de pages du sitemap (4 requêtes à la fois, avec une pause),
+    /// puis vérifie jusqu'à 100 adresses liées mais non analysées (liens cassés, redirections).
     func runSite(_ input: String, maxPages: Int, progress: @escaping @MainActor (Int, Int) -> Void) async throws -> SiteReport {
         guard let url = Analyzer.normalize(input) else { throw AnalyzerError.invalidURL }
         guard let home = await fetch(url) else { throw AnalyzerError.unreachable }
@@ -182,38 +386,116 @@ extension Analyzer {
         guard !others.isEmpty else { throw AnalyzerError.noSitemap }
 
         let sampled = Analyzer.sample(others, max: max(maxPages - 1, 0))
-        let total = sampled.count + 1
-        var reports: [Report] = [homeReport]
+        let complete = sampled.count == others.count
+        var total = sampled.count + 1
+        var crawls: [Crawl] = []
         var done = 1
-        var unreachable = 0
         await progress(done, total)
 
+        // Phase 1 : pages du sitemap
         var index = 0
-        await withTaskGroup(of: Report?.self) { group in
+        await withTaskGroup(of: Crawl.self) { group in
             func launch() {
                 guard index < sampled.count else { return }
                 let u = sampled[index]
                 index += 1
                 group.addTask {
                     try? await Task.sleep(nanoseconds: 150_000_000)
-                    guard let p = await self.fetch(u), p.status < 400 else { return nil }
-                    return self.analyzePage(p, files: files, input: u.absoluteString)
+                    guard let p = await self.fetch(u) else { return Crawl(requested: u, report: nil, status: nil, finalURL: nil) }
+                    if p.status >= 400 { return Crawl(requested: u, report: nil, status: p.status, finalURL: p.finalURL) }
+                    return Crawl(requested: u, report: self.analyzePage(p, files: files, input: u.absoluteString), status: p.status, finalURL: p.finalURL)
                 }
             }
             for _ in 0..<4 { launch() }
-            while let r = await group.next() {
+            while let c = await group.next() {
                 done += 1
-                if let r = r { reports.append(r) } else { unreachable += 1 }
+                crawls.append(c)
                 await progress(done, total)
                 launch()
             }
         }
+
+        let reports = [homeReport] + crawls.compactMap { $0.report }
+        var redirectMap: [String: String] = [:]
+        var failed: [String: Int] = [:]
+        let homeRequestedKey = Analyzer.key(url)
+        if homeRequestedKey != homeKey { redirectMap[homeRequestedKey] = homeKey }
+        for c in crawls {
+            let rk = Analyzer.key(c.requested)
+            if c.report != nil, let f = c.finalURL {
+                let fk = Analyzer.key(f)
+                if fk != rk { redirectMap[rk] = fk }
+            } else {
+                failed[rk] = c.status ?? 0
+            }
+        }
+        let unreachable = crawls.filter { $0.report == nil }.count
+
+        // Phase 2 : adresses liées mais non analysées
+        var rawSources: [String: Set<String>] = [:]
+        var urlByKey: [String: URL] = [:]
+        for r in reports {
+            let sp = URL(string: r.finalURL).map { Analyzer.pathOf($0) } ?? r.finalURL
+            for l in r.outlinks {
+                let k = Analyzer.key(l.url)
+                rawSources[k, default: []].insert(sp)
+                if urlByKey[k] == nil { urlByKey[k] = l.url }
+            }
+        }
+        for c in crawls { urlByKey[Analyzer.key(c.requested)] = c.requested }
+        urlByKey[homeKey] = home.finalURL
+
+        var known = Set(reports.compactMap { URL(string: $0.finalURL) }.map { Analyzer.key($0) })
+        known.formUnion(redirectMap.keys)
+        known.formUnion(failed.keys)
+        let candidates = rawSources.keys
+            .filter { k in
+                guard !known.contains(k), let u = urlByKey[k] else { return false }
+                return !Analyzer.skippedExtensions.contains(u.pathExtension.lowercased())
+            }
+            .sorted {
+                let a = rawSources[$0]!.count, b = rawSources[$1]!.count
+                return a != b ? a > b : $0 < $1
+            }
+        let toCheck = Array(candidates.prefix(100))
+        let notVerified = candidates.count - toCheck.count
+        total += toCheck.count
+
+        var checkIndex = 0
+        await withTaskGroup(of: (String, Int?, String?).self) { group in
+            func launch() {
+                guard checkIndex < toCheck.count else { return }
+                let k = toCheck[checkIndex]
+                checkIndex += 1
+                let u = urlByKey[k]!
+                group.addTask {
+                    try? await Task.sleep(nanoseconds: 150_000_000)
+                    guard let p = await self.fetch(u) else { return (k, nil, nil) }
+                    return (k, p.status, Analyzer.key(p.finalURL))
+                }
+            }
+            for _ in 0..<4 { launch() }
+            while let (k, status, finalKey) = await group.next() {
+                done += 1
+                if let s = status {
+                    if s >= 400 { failed[k] = s }
+                    else if let fk = finalKey, fk != k { redirectMap[k] = fk }
+                } else {
+                    failed[k] = 0
+                }
+                await progress(done, total)
+                launch()
+            }
+        }
+
+        let audit = LinkingAudit.build(reports: reports, homeKey: homeKey, redirectMap: redirectMap, failed: failed,
+                                       urlByKey: urlByKey, complete: complete, verified: toCheck.count, notVerified: notVerified)
 
         let pages = reports.map { PageResult(report: $0) }.sorted {
             if $0.score != $1.score { return $0.score < $1.score }
             return $0.path < $1.path
         }
         return SiteReport(rootURL: home.finalURL.absoluteString, date: Date(), pages: pages,
-                          sitemapTotal: others.count + 1, unreachable: unreachable, isDemo: isDemo)
+                          sitemapTotal: others.count + 1, unreachable: unreachable, isDemo: isDemo, linking: audit)
     }
 }

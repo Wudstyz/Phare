@@ -19,7 +19,14 @@ if args.contains("--cli") {
                 let r = try await a.runSite(input, maxPages: maxPages) { done, total in
                     FileHandle.standardError.write(Data("\(done)/\(total)\n".utf8))
                 }
-                print(r.markdown())
+                var bl: BacklinkData?
+                if let a = args.first(where: { $0.hasPrefix("--backlinks=") }) {
+                    let urls = a.dropFirst(12).split(separator: ",").map { URL(fileURLWithPath: String($0)) }
+                    bl = BacklinkParser.load(urls: urls)
+                } else if demo {
+                    bl = BacklinkParser.parse(files: DemoData.backlinkFiles)
+                }
+                print(r.markdown(backlinks: bl))
             } else {
                 print(try await a.run(input).markdown())
             }

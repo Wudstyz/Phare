@@ -54,6 +54,26 @@ struct Fact: Identifiable {
     let value: String
 }
 
+/// Un lien interne trouvé dans une page.
+struct Outlink {
+    let url: URL
+    let anchor: String
+    let nofollow: Bool
+}
+
+let genericAnchors: Set<String> = [
+    "cliquez ici", "cliquer ici", "ici", "en savoir plus", "savoir plus", "lire la suite", "lire plus",
+    "voir plus", "plus", "voir", "découvrir", "suite", "lien", "click here", "here", "read more",
+    "learn more", "more", "en savoir +", "plus d'infos", "plus d'informations",
+]
+
+func isGenericAnchor(_ text: String) -> Bool {
+    let t = text.lowercased()
+        .trimmingCharacters(in: CharacterSet(charactersIn: " .…»›>→-–:!\u{00A0}"))
+        .replacingOccurrences(of: "’", with: "'")
+    return genericAnchors.contains(t)
+}
+
 struct Report {
     let inputURL: String
     let finalURL: String
@@ -61,6 +81,7 @@ struct Report {
     let checks: [Check]
     let facts: [Fact]
     let isDemo: Bool
+    var outlinks: [Outlink] = []
 
     func score(_ pillar: Pillar) -> Int {
         let list = checks.filter { $0.pillar == pillar && $0.status.score != nil }

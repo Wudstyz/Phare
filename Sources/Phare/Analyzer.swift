@@ -125,7 +125,7 @@ struct Analyzer {
 
     func analyzePage(_ page: Fetched, files: SiteFiles, input: String) -> Report {
         let host = page.finalURL.host ?? ""
-        let doc = HTMLDoc(page.body, host: host)
+        let doc = HTMLDoc(page.body, host: host, base: page.finalURL)
         let robots = files.robots
         let llmsOK = files.llmsOK
         let sitemapOK = files.sitemapOK
@@ -211,6 +211,17 @@ struct Analyzer {
             "\(doc.internalLinks) lien(s) interne(s), \(doc.externalLinks) externe(s).",
             doc.internalLinks >= 5 ? nil : "Reliez cette page à vos autres pages importantes.", w: 2)
 
+        let weakAnchors = doc.outlinks.filter { isGenericAnchor($0.anchor) || $0.anchor.trimmingCharacters(in: .whitespaces).isEmpty }.count
+        if doc.outlinks.isEmpty {
+            add(.seo, "Textes des liens internes", .info, "Aucun lien interne à évaluer.", w: 2)
+        } else {
+            let ratio = Double(weakAnchors) / Double(doc.outlinks.count)
+            add(.seo, "Textes des liens internes", weakAnchors == 0 ? .ok : (ratio > 0.3 ? .fail : .warn),
+                weakAnchors == 0 ? "Les liens internes ont des textes descriptifs."
+                                 : "\(weakAnchors) lien(s) sur \(doc.outlinks.count) avec un texte vide ou générique (« cliquez ici », « en savoir plus »…).",
+                weakAnchors == 0 ? nil : "Remplacez-les par des textes qui décrivent la page visée : utile à Google et aux IA.", w: 2)
+        }
+
         add(.seo, "Quantité de contenu", doc.words >= 300 ? .ok : (doc.words >= 120 ? .warn : .fail),
             "Environ \(doc.words) mots de texte visible.",
             doc.words >= 300 ? nil : "Les pages riches (300 mots et plus) se positionnent mieux et sont plus citées.", w: 3)
@@ -233,6 +244,10 @@ struct Analyzer {
 
         add(.seo, "Icône du site (favicon)", doc.hasFavicon ? .ok : .info,
             doc.hasFavicon ? "Favicon déclaré." : "Aucun favicon déclaré dans le HTML.", w: 1)
+
+        add(.seo, "Liens entrants (backlinks)", .info,
+            "Non mesurés ici : Phare ne voit que votre site, pas les autres sites qui pointent vers lui.",
+            "Les backlinks comptent beaucoup pour Google et pour être cité par les IA. Mesurez-les avec Google Search Console (rapport « Liens », import possible dans l'onglet Backlinks du mode « Tout le site ») et gagnez-en : annuaires sérieux, partenaires, presse locale, contenus utiles qu'on a envie de citer.", w: 1)
 
         // ---------- GSO ----------
         add(.gso, "Données structurées (JSON-LD)", doc.jsonLDBlocks > 0 ? .ok : .fail,
@@ -335,6 +350,7 @@ struct Analyzer {
         ]
         if let s = robots?.sitemaps.first { facts.append(Fact(label: "Sitemap déclaré", value: s)) }
 
-        return Report(inputURL: input, finalURL: page.finalURL.absoluteString, date: Date(), checks: checks, facts: facts, isDemo: isDemo)
+        return Report(inputURL: input, finalURL: page.finalURL.absoluteString, date: Date(), checks: checks, facts: facts,
+                      isDemo: isDemo, outlinks: doc.outlinks)
     }
 }

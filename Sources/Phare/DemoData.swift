@@ -32,7 +32,8 @@ enum DemoData {
       <h2>Notre savoir-faire</h2>
       <p>Chaque meuble est dessiné sur mesure, usiné dans notre atelier puis monté chez vous. Nous travaillons exclusivement des bois issus de forêts gérées durablement et appliquons des finitions à base d'huiles naturelles. L'équipe compte 8 menuisiers formés aux techniques traditionnelles comme à la fabrication numérique.</p>
       <p>Contactez-nous pour un devis gratuit sous 48 h. Nous intervenons dans un rayon de 60 km autour de Rennes et répondons à toutes les demandes, des plus simples aux plus techniques, avec le même soin.</p>
-      <footer><a href="/mentions-legales">Mentions légales</a> <a href="https://www.facebook.com/exemple">Facebook</a></footer>
+      <footer><a href="/mentions-legales">Mentions légales</a> <a href="https://www.facebook.com/exemple">Facebook</a>
+      <a href="/garantie">Garantie décennale</a> <a href="/realisations">cliquez ici</a> <a href="/devis">en savoir plus</a></footer>
     </body>
     </html>
     """
@@ -53,7 +54,8 @@ enum DemoData {
     Sitemap: https://www.atelier-du-bois-demo.fr/sitemap.xml
     """
 
-    static let paths = ["/", "/realisations", "/devis", "/contact", "/blog/choisir-son-escalier", "/mentions-legales"]
+    static let paths = ["/", "/realisations", "/devis", "/contact", "/blog/choisir-son-escalier", "/mentions-legales",
+                        "/realisations/escaliers", "/realisations/escaliers/chene", "/realisations/escaliers/chene/detail", "/archive-2019"]
 
     static let sitemap: String = {
         let urls = paths.map { "<url><loc>https://www.atelier-du-bois-demo.fr\($0)</loc></url>" }.joined()
@@ -76,7 +78,12 @@ enum DemoData {
     static let pages: [String: String] = [
         "/": html,
         "/realisations": page(title: "Nos réalisations – Atelier du Bois", desc: nil, h1: "Réalisations",
-                              body: "<h2>Escaliers</h2><img src=\"/a.jpg\"><img src=\"/b.jpg\"><img src=\"/c.jpg\"><h2>Cuisines</h2><ul><li>Chêne</li><li>Hêtre</li></ul>"),
+                              body: "<h2>Escaliers</h2><img src=\"/a.jpg\"><img src=\"/b.jpg\"><img src=\"/c.jpg\"><h2>Cuisines</h2><ul><li>Chêne</li><li>Hêtre</li></ul><a href=\"/realisations/escaliers\">Tous nos escaliers</a> <a href=\"/page-supprimee\">Ancien catalogue</a>"),
+        "/realisations/escaliers": page(title: "Escaliers sur mesure – Atelier du Bois", desc: "Escaliers en chêne, hêtre ou frêne fabriqués dans notre atelier.", h1: "Escaliers", body: "<h2>Chêne</h2><a href=\"/realisations/escaliers/chene\">Escalier en chêne</a>", words: 2),
+        "/realisations/escaliers/chene": page(title: "Escalier en chêne – Atelier du Bois", desc: nil, h1: "Escalier en chêne", body: "<h2>Finitions</h2><a href=\"/realisations/escaliers/chene/detail\">Voir le détail</a>", words: 2),
+        "/realisations/escaliers/chene/detail": page(title: "Détail d'un escalier en chêne", desc: nil, h1: "Détail", body: "<h2>Fiche technique</h2><a href=\"/ancienne-page\">Autres escaliers</a>", words: 1),
+        "/archive-2019": page(title: "Archive 2019", desc: nil, h1: "Archive", body: "", words: 1),
+        "/garantie": page(title: "Garantie décennale – Atelier du Bois", desc: nil, h1: "Garantie", body: "", words: 1),
         "/devis": page(title: "Contact et devis – Atelier du Bois", desc: "Demandez un devis gratuit pour votre projet de menuiserie sur mesure, réponse sous 48 h.",
                        h1: "Demander un devis", body: "<h2>Votre projet</h2>"),
         "/contact": page(title: "Contact et devis – Atelier du Bois", desc: nil, h1: "Contact", body: "<h2>Nous trouver</h2>", words: 1),
@@ -90,6 +97,31 @@ enum DemoData {
         "/mentions-legales": page(title: "Mentions légales", desc: nil, h1: "Mentions légales", body: "", words: 1),
     ]
 
+    /// Faux export « Liens externes » de Google Search Console (site fictif), pour la démo.
+    static let backlinkFiles: [(name: String, text: String)] = [
+        ("Sites référents principaux.csv", """
+        Sites référents,Liens entrants
+        blog-amenagement-maison.example,12
+        annuaire-artisans-bretagne.example,8
+        magazine-habitat.example,5
+        forum-bricolage.example,3
+        mairie-exemple.example,2
+        """),
+        ("Pages les plus liées.csv", """
+        Pages web cibles,Liens entrants
+        https://www.atelier-du-bois-demo.fr/,18
+        https://www.atelier-du-bois-demo.fr/blog/choisir-son-escalier,9
+        https://www.atelier-du-bois-demo.fr/realisations,4
+        """),
+        ("Texte d'ancrage.csv", """
+        Texte d'ancrage,Liens entrants
+        Atelier du Bois,10
+        menuisier Rennes,6
+        cliquez ici,3
+        escalier sur mesure,2
+        """),
+    ]
+
     static let fetch: FetchFn = { url in
         let base = URL(string: DemoData.url + url.path)!
         func ok(_ body: String, _ seconds: Double = 0.9) -> Fetched {
@@ -99,6 +131,10 @@ enum DemoData {
         case "/robots.txt": return ok(DemoData.robots)
         case "/sitemap.xml": return ok(DemoData.sitemap)
         case "": return ok(DemoData.html, 1.8)
+        case "/ancienne-page":
+            let target = URL(string: DemoData.url + "/realisations/escaliers")!
+            let body = DemoData.pages["/realisations/escaliers"] ?? ""
+            return Fetched(status: 200, headers: [:], body: body, finalURL: target, seconds: 0.6, bytes: body.utf8.count)
         default:
             if let body = DemoData.pages[url.path] { return ok(body, url.path == "/" ? 1.8 : 0.7) }
             return Fetched(status: 404, headers: [:], body: "", finalURL: base, seconds: 0.2, bytes: 0)

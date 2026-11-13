@@ -27,6 +27,13 @@ Deux modes, au choix en haut de la fenêtre :
 - **Une page** : analyse l'adresse indiquée.
 - **Tout le site** : lit le `sitemap.xml`, analyse un échantillon de pages (20, 50, 100 ou 200 au maximum) et affiche un **tableau classé de la page la plus faible à la meilleure**. Un clic sur une ligne ouvre l'analyse détaillée de la page. L'onglet **Problèmes récurrents** liste ce qui revient sur plusieurs pages, y compris les titres en double.
 
+En mode « Tout le site », deux onglets de plus :
+
+- **Maillage** : audit des liens internes. Liens cassés, liens qui passent par une redirection, pages orphelines (aucun lien ne mène vers elles), pages à plus de 3 clics de l'accueil, textes de lien vides ou génériques (« cliquez ici »). Phare vérifie aussi jusqu'à 100 adresses liées mais non analysées. La colonne « Entrants » du tableau donne le nombre de pages qui pointent vers chaque page.
+- **Backlinks** : importez l'export « Liens externes » de **Google Search Console** (gratuit, pour votre propre site) pour voir les sites qui vous citent, vos pages les plus liées et les textes d'ancrage. Un fichier d'essai fictif est dans [`examples/`](examples).
+
+Chaque rapport rappelle aussi que les backlinks ne sont pas mesurés par l'analyse d'une page seule, avec une piste pour les travailler.
+
 L'analyse se fait **depuis votre Mac** : aucune donnée n'est envoyée à un service tiers.
 
 ## Captures
@@ -36,6 +43,8 @@ L'analyse se fait **depuis votre Mac** : aucune donnée n'est envoyée à un ser
 | Tableau | Détail d'une page |
 |---|---|
 | <img src="docs/screenshots/06-site-pages.png"> | <img src="docs/screenshots/07-page-detail.png"> |
+| **Maillage interne** | **Backlinks (import Search Console)** |
+| <img src="docs/screenshots/09-maillage.png"> | <img src="docs/screenshots/10-backlinks.png"> |
 
 | SEO | GSO |
 |---|---|
@@ -68,6 +77,8 @@ Rien d'autre à installer.
 - En mode « Une page », Phare analyse **la page indiquée** et les fichiers `robots.txt`, `sitemap.xml`, `llms.txt`.
 - En mode « Tout le site », les pages viennent **du sitemap uniquement** (Phare ne suit pas les liens) : sans sitemap exploitable, le mode s'arrête avec un message. Au-delà du maximum choisi, un échantillon réparti sur la liste est analysé, pas toutes les pages. Les requêtes sont limitées (4 à la fois, avec une courte pause) pour ne pas surcharger le site.
 - Les contrôles de `robots.txt` et `llms.txt` sont communs à tout le site : ils apparaissent donc sur chaque page.
+- **Backlinks** : Phare ne les mesure pas lui-même (il faudrait un index du web entier). Il lit seulement l'export Google Search Console que vous lui donnez. Search Console ne montre qu'un échantillon des liens, et ne fonctionne que pour un site dont vous êtes propriétaire. Le lecteur de CSV est tolérant (virgule, point-virgule, tabulation, `.zip`) mais a été **testé sur des fichiers d'exemple, pas sur un vrai export Search Console** : si un fichier n'est pas reconnu, l'app l'indique.
+- **Maillage** : calculé à partir des pages analysées. Si l'échantillon ne couvre pas tout le sitemap, « pages sans lien entrant » est à confirmer, et la profondeur de clics est une estimation. Les liens ajoutés par JavaScript ne sont pas vus. Seules 100 adresses non analysées sont vérifiées.
 - Il lit le HTML **brut**, sans exécuter JavaScript, comme le font la plupart des robots d'IA. Un site entièrement construit en JavaScript aura donc peu de contenu visible : c'est voulu, et signalé.
 - Phare **n'interroge pas** ChatGPT, Claude ou Gemini pour savoir si votre site y est cité. Les scores sont des **indicateurs de bonnes pratiques**, pas une garantie de visibilité.
 - `llms.txt` est un standard émergent : aucune IA ne garantit l'utiliser.
@@ -97,6 +108,7 @@ build/Phare.app/Contents/MacOS/Phare --cli https://example.com
 | `Sources/Phare/Analyzer.swift` | Toutes les vérifications SEO / GSO / Accès IA, récupération réseau |
 | `Sources/Phare/HTMLDoc.swift` | Lecture du HTML, du JSON-LD et de `robots.txt` |
 | `Sources/Phare/Site.swift` | Mode « Tout le site » : lecture du sitemap, analyse de plusieurs pages, classement |
+| `Sources/Phare/Backlinks.swift` | Lecture de l'export Google Search Console (CSV / zip) |
 | `Sources/Phare/Models.swift` | Scores, rapport, export Markdown |
 | `Sources/Phare/Views.swift` | Interface SwiftUI (thème clair) |
 | `Sources/Phare/DemoData.swift` | Site fictif du mode démo |

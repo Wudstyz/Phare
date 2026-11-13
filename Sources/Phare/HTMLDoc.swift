@@ -9,6 +9,17 @@ func regexMatches(_ pattern: String, in s: String, group: Int = 0) -> [String] {
     }
 }
 
+func regexCaptures(_ pattern: String, in s: String) -> [[String]] {
+    guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else { return [] }
+    let ns = s as NSString
+    return re.matches(in: s, range: NSRange(location: 0, length: ns.length)).map { m in
+        (0..<m.numberOfRanges).map { i in
+            let r = m.range(at: i)
+            return r.location == NSNotFound ? "" : ns.substring(with: r)
+        }
+    }
+}
+
 func parseAttributes(_ tag: String) -> [String: String] {
     guard let re = try? NSRegularExpression(pattern: #"([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)')"#) else { return [:] }
     let ns = tag as NSString
@@ -66,8 +77,9 @@ struct HTMLDoc {
     var schemaTypes: Set<String> = []
     var hasSameAs = false
     var jsonLDBlocks = 0
+    var outlinks: [Outlink] = []
 
-    init(_ html: String, host: String) {
+    init(_ html: String, host: String, base: URL? = nil) {
         title = stripTags(regexMatches(#"<title[^>]*>(.*?)</title>"#, in: html, group: 1).first ?? "")
         lang = parseAttributes(regexMatches(#"<html\b[^>]*>"#, in: html).first ?? "")["lang"] ?? ""
 
@@ -108,16 +120,30 @@ struct HTMLDoc {
         }
 
         let bareHost = host.lowercased().replacingOccurrences(of: "www.", with: "")
-        for tag in regexMatches(#"<a\b[^>]*>"#, in: html) {
-            guard let href = parseAttributes(tag)["href"]?.trimmingCharacters(in: .whitespaces), !href.isEmpty else { continue }
+        for cap in regexCaptures(#"<a\b([^>]*)>(.*?)</a>"#, in: html) {
+            let attrs = parseAttributes(cap[1])
+            guard let href = attrs["href"]?.trimmingCharacters(in: .whitespaces), !href.isEmpty else { continue }
             let low = href.lowercased()
             if low.hasPrefix("#") || low.hasPrefix("mailto:") || low.hasPrefix("tel:") || low.hasPrefix("javascript:") { continue }
-            if low.hasPrefix("http://") || low.hasPrefix("https://") || low.hasPrefix("//") {
-                let h = URL(string: low.hasPrefix("//") ? "https:" + low : low)?.host?.replacingOccurrences(of: "www.", with: "") ?? ""
-                if h == bareHost { internalLinks += 1 } else { externalLinks += 1 }
-            } else {
-                internalLinks += 1
+            let isAbsolute = low.hasPrefix("http://") || low.hasPrefix("https://") || low.hasPrefix("//")
+            var resolved: URL?
+            if let b = base { resolved = URL(string: isAbsolute && low.hasPrefix("//") ? "https:" + href : href, relativeTo: b)?.absoluteURL }
+            else if isAbsolute { resolved = URL(string: low.hasPrefix("//") ? "https:" + href : href) }
+            var isInternal = !isAbsolute
+            if isAbsolute || resolved != nil, let h = resolved?.host {
+                isInternal = h.lowercased().replacingOccurrences(of: "www.", with: "") == bareHost
             }
+            if isInternal { internalLinks += 1 } else { externalLinks += 1 }
+            guard isInternal, let u = resolved, var comps = URLComponents(url: u, resolvingAgainstBaseURL: false),
+                  u.scheme == "http" || u.scheme == "https" else { continue }
+            comps.fragment = nil
+            guard let clean = comps.url else { continue }
+            var text = stripTags(cap[2])
+            if text.isEmpty {
+                text = parseAttributes(regexMatches(#"<img\b[^>]*>"#, in: cap[2]).first ?? "")["alt"] ?? ""
+            }
+            if text.isEmpty { text = attrs["aria-label"] ?? attrs["title"] ?? "" }
+            outlinks.append(Outlink(url: clean, anchor: text, nofollow: (attrs["rel"] ?? "").lowercased().contains("nofollow")))
         }
 
         listCount = regexMatches(#"<(ul|ol)\b"#, in: html).count
